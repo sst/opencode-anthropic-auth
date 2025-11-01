@@ -33,6 +33,44 @@ async function authorize(mode) {
 }
 
 /**
+ * @param {string} token
+ */
+async function check1MContext(token) {
+  const profileResponse = await fetch(
+    "https://api.anthropic.com/api/oauth/profile",
+    {
+      headers: {
+        authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    },
+  );
+
+  if (!profileResponse.ok) return false;
+
+  const profile = await profileResponse.json();
+  const orgUuid = profile.organization?.uuid;
+
+  if (!orgUuid) return false;
+
+  const accessResponse = await fetch(
+    `https://api.anthropic.com/api/organization/${orgUuid}/claude_code_sonnet_1m_access`,
+    {
+      headers: {
+        "Content-Type": "application/json",
+        authorization: `Bearer ${token}`,
+        "anthropic-beta": "oauth-2025-04-20",
+      },
+    },
+  );
+
+  if (!accessResponse.ok) return false;
+
+  const accessData = await accessResponse.json();
+  return accessData.has_access === true;
+}
+
+/**
  * @param {string} code
  * @param {string} verifier
  */
@@ -57,11 +95,13 @@ async function exchange(code, verifier) {
       type: "failed",
     };
   const json = await result.json();
+  const has1MContext = await check1MContext(json.access_token);
   return {
     type: "success",
     refresh: json.refresh_token,
     access: json.access_token,
     expires: Date.now() + json.expires_in * 1000,
+    has1MContext,
   };
 }
 
@@ -108,6 +148,7 @@ export async function AnthropicAuthPlugin({ client }) {
                 );
                 if (!response.ok) return;
                 const json = await response.json();
+                const has1MContext = await check1MContext(json.access_token);
                 await client.auth.set({
                   path: {
                     id: "anthropic",
@@ -117,15 +158,35 @@ export async function AnthropicAuthPlugin({ client }) {
                     refresh: json.refresh_token,
                     access: json.access_token,
                     expires: Date.now() + json.expires_in * 1000,
+                    has1MContext,
                   },
                 });
                 auth.access = json.access_token;
+                auth.has1MContext = has1MContext;
               }
+              const body = (() => {
+                try {
+                  return typeof init.body === "string"
+                    ? JSON.parse(init.body)
+                    : init.body;
+                } catch {
+                  return {};
+                }
+              })();
+              const betaFeatures = [
+                "oauth-2025-04-20",
+                "claude-code-20250219",
+                "interleaved-thinking-2025-05-14",
+                "fine-grained-tool-streaming-2025-05-14",
+                // Only add context-1m header if model starts with "claude-sonnet-" and has1MContext is true
+                auth.has1MContext &&
+                  body.model?.startsWith("claude-sonnet-") &&
+                  "context-1m-2025-08-07",
+              ].filter(Boolean);
               const headers = {
                 ...init.headers,
                 authorization: `Bearer ${auth.access}`,
-                "anthropic-beta":
-                  "oauth-2025-04-20,claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14",
+                "anthropic-beta": betaFeatures.join(","),
               };
               delete headers["x-api-key"];
               return fetch(input, {
