@@ -110,7 +110,9 @@ export async function AnthropicAuthPlugin({ client }) {
                     }),
                   },
                 );
-                if (!response.ok) return;
+                if (!response.ok) {
+                  throw new Error(`Token refresh failed: ${response.status}`);
+                }
                 const json = await response.json();
                 await client.auth.set({
                   path: {
