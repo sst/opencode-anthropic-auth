@@ -41,9 +41,9 @@ async function exchange(code, verifier) {
   const result = await fetch("https://console.anthropic.com/v1/oauth/token", {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: JSON.stringify({
+    body: new URLSearchParams({
       code: splits[0],
       state: splits[1],
       grant_type: "authorization_code",
@@ -101,9 +101,9 @@ export async function AnthropicAuthPlugin({ client }) {
                   {
                     method: "POST",
                     headers: {
-                      "Content-Type": "application/json",
+                      "Content-Type": "application/x-www-form-urlencoded",
                     },
-                    body: JSON.stringify({
+                    body: new URLSearchParams({
                       grant_type: "refresh_token",
                       refresh_token: auth.refresh,
                       client_id: CLIENT_ID,
