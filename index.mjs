@@ -32,6 +32,7 @@ const CLAUDE_CODE_TOOL_NAMES = new Map([
   ["webfetch", "WebFetch"],
   ["websearch", "WebSearch"],
   ["todowrite", "TodoWrite"],
+  ["question", "AskUserQuestion"],
 ]);
 const OPENCODE_TOOL_NAMES = new Map(
   Array.from(CLAUDE_CODE_TOOL_NAMES, ([key, value]) => [value, key]),
