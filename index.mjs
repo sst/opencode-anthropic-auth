@@ -134,6 +134,7 @@ function getEnvConfig() {
 function applyStainlessHeaders(headers, isStream = false) {
   const config = getEnvConfig();
 
+  headers.set("accept", "application/json");
   headers.set("user-agent", "claude-cli/2.1.2 (external, cli)");
   headers.set("x-app", "cli");
   headers.set("anthropic-dangerous-direct-browser-access", "true");
@@ -309,17 +310,41 @@ function replaceToolNamesInText(text) {
 // Request/Response Processing
 // ============================================================================
 
+function stripCacheControlFromSystem(system) {
+  if (!Array.isArray(system)) return system;
+  return system.map((block) => {
+    if (block && typeof block === "object" && "cache_control" in block) {
+      const { cache_control, ...rest } = block;
+      return rest;
+    }
+    return block;
+  });
+}
+
 async function normalizeRequestBody(parsed, injectMetadata = false) {
   if (parsed.model) {
     parsed.model = normalizeModelId(parsed.model);
   }
 
+  // Normalize tools - ensure empty array if not present (Claude Code always sends tools)
   if (parsed.tools) {
     parsed.tools = normalizeTools(parsed.tools);
+  } else {
+    parsed.tools = [];
   }
 
   if (Array.isArray(parsed.messages)) {
     parsed.messages = normalizeMessagesForClaude(parsed.messages);
+  }
+
+  // Remove temperature - Claude Code doesn't send it
+  if ("temperature" in parsed) {
+    delete parsed.temperature;
+  }
+
+  // Remove cache_control from system blocks - Claude Code doesn't use it
+  if (Array.isArray(parsed.system)) {
+    parsed.system = stripCacheControlFromSystem(parsed.system);
   }
 
   // OAuth API does not support tool_choice parameter - must be removed
@@ -791,9 +816,22 @@ export async function AnthropicAuthPlugin({ client }) {
         options.model = normalizeModelId(options.model ?? input.model?.id);
       }
 
-      // Tools & messages
-      if (options.tools) options.tools = normalizeTools(options.tools);
+      // Tools & messages - match Claude Code behavior
+      if (options.tools) {
+        options.tools = normalizeTools(options.tools);
+      } else {
+        options.tools = [];
+      }
       if (Array.isArray(options.messages)) options.messages = normalizeMessagesForClaude(options.messages);
+
+      // Remove temperature - Claude Code doesn't send it
+      if ("temperature" in options) delete options.temperature;
+
+      // Remove cache_control from system blocks - Claude Code doesn't use it
+      if (Array.isArray(options.system)) {
+        options.system = stripCacheControlFromSystem(options.system);
+      }
+
       // OAuth API does not support tool_choice - remove to prevent API errors
       if (options.tool_choice) delete options.tool_choice;
     },
